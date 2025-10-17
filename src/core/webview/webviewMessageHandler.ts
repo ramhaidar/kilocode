@@ -3771,5 +3771,14 @@ export const webviewMessageHandler = async (
 			})
 			break
 		}
+		// kilocode_change start: Add release notes global state handler
+		case "updateGlobalState": {
+			if (message.key && message.stateValue !== undefined) {
+				await updateGlobalState(message.key as keyof GlobalState, message.stateValue)
+				await provider.postStateToWebview()
+			}
+			break
+		}
+		// kilocode_change end: Add release notes global state handler
 	}
 }

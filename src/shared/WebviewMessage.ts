@@ -292,6 +292,11 @@ export interface WebviewMessage {
 		| "editQueuedMessage"
 		| "dismissUpsell"
 		| "getDismissedUpsells"
+		// kilocode_change start: Add release notes message types
+		| "updateGlobalState"
+	key?: string // For updateGlobalState - the global state key to update
+	stateValue?: any // For updateGlobalState - the value to set
+	// kilocode_change end: Add release notes message types
 	text?: string
 	editedMessageContent?: string
 	tab?: "settings" | "history" | "mcp" | "modes" | "chat" | "marketplace" | "cloud"

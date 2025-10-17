@@ -1941,6 +1941,7 @@ ${prompt}
 			dismissedNotificationIds, // kilocode_change
 			morphApiKey, // kilocode_change
 			fastApplyModel, // kilocode_change: Fast Apply model selection
+			lastViewedReleaseVersion, // kilocode_change
 			alwaysAllowFollowupQuestions,
 			followupAutoApproveTimeoutMs,
 			includeDiagnosticMessages,
@@ -2119,6 +2120,7 @@ ${prompt}
 			dismissedNotificationIds: dismissedNotificationIds ?? [], // kilocode_change
 			morphApiKey, // kilocode_change
 			fastApplyModel: fastApplyModel ?? "auto", // kilocode_change: Fast Apply model selection
+			lastViewedReleaseVersion, // kilocode_change
 			alwaysAllowFollowupQuestions: alwaysAllowFollowupQuestions ?? false,
 			followupAutoApproveTimeoutMs: followupAutoApproveTimeoutMs ?? 60000,
 			includeDiagnosticMessages: includeDiagnosticMessages ?? true,
@@ -2332,6 +2334,7 @@ ${prompt}
 			dismissedNotificationIds: stateValues.dismissedNotificationIds ?? [], // kilocode_change
 			morphApiKey: stateValues.morphApiKey, // kilocode_change
 			fastApplyModel: stateValues.fastApplyModel ?? "auto", // kilocode_change: Fast Apply model selection
+			lastViewedReleaseVersion: stateValues.lastViewedReleaseVersion, // kilocode_change: Track last viewed release version
 			historyPreviewCollapsed: stateValues.historyPreviewCollapsed ?? false,
 			reasoningBlockCollapsed: stateValues.reasoningBlockCollapsed ?? true,
 			cloudUserInfo,
