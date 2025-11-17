@@ -22,6 +22,7 @@ Deploy is built to streamline the entire process of getting an app live:
 - Your project must use **Next.js 14/15**
 - You must enable the Kilo Code **Integration** for Github
   - Navigate to **your [Organization](https://app.kilocode.ai/organizations/) > Integrations > Github**  and click **Configure**.
+  - Follow the instructions to connect Github to Kilo Code
 
 
 ## Deploying Your App
