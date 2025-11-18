@@ -81,16 +81,20 @@ interface ManagedIndexerWorkspaceFolderState {
 	manifest: ServerManifest
 	isIndexing: boolean
 	watcher: GitWatcher
+	workspaceFolder: vscode.WorkspaceFolder
 }
 
 export class ManagedIndexer implements vscode.Disposable {
 	// Handle changes to vscode workspace folder changes
 	workspaceFoldersListener: vscode.Disposable | null = null
-	watchers: GitWatcher[] = []
 	config: ManagedIndexerConfig | null = null
 	organization: KiloOrganization | null = null
 	isActive = false
-	workspaceFolderState: Map<string, ManagedIndexerWorkspaceFolderState> = new Map()
+
+	/**
+	 * Tracks state that depends on workspace folders
+	 */
+	workspaceFolderState: ManagedIndexerWorkspaceFolderState[] = []
 
 	// Concurrency limiter for file upserts
 	private readonly fileUpsertLimit = pLimit(MANAGED_MAX_CONCURRENT_FILES)
@@ -176,60 +180,90 @@ export class ManagedIndexer implements vscode.Disposable {
 		}
 
 		this.isActive = true
-		this.watchers = await Promise.all(
-			vscode.workspace.workspaceFolders.map(async (folder) => {
-				const cwd = folder.uri.fsPath
+
+		// Build workspaceFolderState for each workspace folder
+		const states = await Promise.all(
+			vscode.workspace.workspaceFolders.map(async (workspaceFolder) => {
+				const cwd = workspaceFolder.uri.fsPath
 
 				if (!(await isGitRepository(cwd))) {
 					return null
 				}
 
-				const [{ repositoryUrl }, branch] = await Promise.all([
+				const [{ repositoryUrl }, gitBranch] = await Promise.all([
 					getGitRepositoryInfo(cwd),
 					getCurrentBranch(cwd),
 				])
 				const config = await getKilocodeConfig(cwd, repositoryUrl)
-				const watcher = new GitWatcher({ cwd })
 				const projectId = config?.project?.id
 
 				if (!projectId) {
 					console.log("[ManagedIndexer] No project ID found for workspace folder", cwd)
 					return null
 				}
-				const manifest = await getServerManifest(kilocodeOrganizationId, projectId, branch, kilocodeToken)
 
-				watcher.onEvent((event) => this.onEvent(Object.assign(event, { projectId, manifest, config })))
+				const manifest = await getServerManifest(kilocodeOrganizationId, projectId, gitBranch, kilocodeToken)
+				const watcher = new GitWatcher({ cwd })
+
+				// Create the state object
+				const state: ManagedIndexerWorkspaceFolderState = {
+					gitBranch,
+					projectId,
+					manifest,
+					isIndexing: false,
+					watcher,
+					workspaceFolder,
+				}
+
+				// Register event handler that includes state context
+				watcher.onEvent(this.onEvent.bind(this))
 
 				// Perform an initial scan
 				await watcher.scan()
 				// Then start the watcher
 				await watcher.start()
 
-				return watcher
+				return state
 			}),
-		).then((watchers) => watchers.filter((w) => !!w))
+		)
+
+		this.workspaceFolderState = states.filter((s) => s !== null)
 	}
 
 	dispose() {
 		this.workspaceFoldersListener?.dispose()
 		this.workspaceFoldersListener = null
-		this.watchers.forEach((watcher) => watcher.dispose())
-		this.watchers = []
+
+		// Dispose all watchers from workspaceFolderState
+		this.workspaceFolderState.forEach((state) => state.watcher.dispose())
+		this.workspaceFolderState = []
+
 		this.isActive = false
 	}
 
-	async onEvent(event: GitWatcherEvent & { projectId: string; manifest: ServerManifest }): Promise<void> {
+	async onEvent(event: GitWatcherEvent): Promise<void> {
 		if (!this.isActive) {
+			return
+		}
+
+		const state = this.workspaceFolderState.find((s) => s.watcher === event.watcher)
+
+		if (!state) {
+			logger.warn("[ManagedIndexer] Received event for unknown watcher")
 			return
 		}
 
 		// Handle different event types
 		switch (event.type) {
 			case "scan-start":
+				// Update isIndexing state
+				state.isIndexing = true
 				logger.info(`[ManagedIndexer] Scan started on branch ${event.branch}`)
 				break
 
 			case "scan-end":
+				// Update isIndexing state
+				state.isIndexing = false
 				logger.info(`[ManagedIndexer] Scan completed on branch ${event.branch}`)
 				break
 
@@ -239,7 +273,8 @@ export class ManagedIndexer implements vscode.Disposable {
 				break
 
 			case "file-changed": {
-				const { branch, filePath, fileHash, isBaseBranch, projectId, manifest, watcher } = event
+				const { branch, filePath, fileHash, isBaseBranch, watcher } = event
+				const { projectId, manifest } = state
 
 				// Already indexed
 				if (manifest.files.some((f) => f.filePath === filePath && f.fileHash === fileHash)) {
