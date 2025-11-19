@@ -309,6 +309,7 @@ describe("ManagedIndexer", () => {
 			const state = indexer.workspaceFolderState[0]
 			expect(state.gitBranch).toBe("main")
 			expect(state.projectId).toBe("test-project-id")
+			expect(state.repositoryUrl).toBe("https://github.com/test/repo")
 			expect(state.isIndexing).toBe(false)
 			expect(state.watcher).toBeDefined()
 			expect(state.workspaceFolder).toBe(mockWorkspaceFolder)
@@ -600,6 +601,10 @@ describe("ManagedIndexer", () => {
 
 				await indexer.onEvent(event)
 
+				expect(kiloConfigFile.getKilocodeConfig).toHaveBeenCalledWith(
+					"/test/workspace",
+					"https://github.com/test/repo",
+				)
 				expect(apiClient.getServerManifest).toHaveBeenCalledWith(
 					"test-org-id",
 					"test-project-id",
@@ -654,6 +659,7 @@ describe("ManagedIndexer", () => {
 			it("should reuse in-flight manifest fetch", async () => {
 				// Clear any previous calls from setup
 				vi.mocked(apiClient.getServerManifest).mockClear()
+				vi.mocked(kiloConfigFile.getKilocodeConfig).mockClear()
 
 				// Make manifest fetch take some time
 				let resolveManifest: any
@@ -844,7 +850,7 @@ describe("ManagedIndexer", () => {
 				await new Promise((resolve) => setTimeout(resolve, 10))
 
 				expect(logger.warn).toHaveBeenCalledWith(
-					"[ManagedIndexer] Missing token or organization ID, skipping file upsert",
+					"[ManagedIndexer] Missing token, organization ID, or project ID, skipping file upsert",
 				)
 				expect(apiClient.upsertFile).not.toHaveBeenCalled()
 			})

@@ -278,29 +278,27 @@ export class GitWatcher implements vscode.Disposable {
 				: path.join(this.config.cwd, gitHeadPath)
 
 			// Watch .git/HEAD for branch switches and commits
-			const headWatcher = vscode.workspace.createFileSystemWatcher(absoluteGitHeadPath)
-
-			this.disposables.push(
-				headWatcher.onDidChange(() => {
+			// We use fs.watch because vscode.workspace.createFileSystemWatcher ignores .git folder
+			try {
+				const headWatcher = fs.watch(absoluteGitHeadPath, () => {
 					this.handleGitChange()
-				}),
-			)
-
-			this.disposables.push(headWatcher)
+				})
+				this.disposables.push(new vscode.Disposable(() => headWatcher.close()))
+			} catch (error) {
+				console.warn("[GitWatcher] Could not watch HEAD:", error)
+			}
 
 			// Watch branch refs for commits
 			try {
 				const gitDir = path.dirname(absoluteGitHeadPath)
-				const refsHeadsPattern = path.join(gitDir, "refs", "heads", "**")
-				const refsWatcher = vscode.workspace.createFileSystemWatcher(refsHeadsPattern)
+				const refsHeadsPath = path.join(gitDir, "refs", "heads")
 
-				this.disposables.push(
-					refsWatcher.onDidChange(() => {
+				if (fs.existsSync(refsHeadsPath)) {
+					const refsWatcher = fs.watch(refsHeadsPath, { recursive: true }, () => {
 						this.handleGitChange()
-					}),
-				)
-
-				this.disposables.push(refsWatcher)
+					})
+					this.disposables.push(new vscode.Disposable(() => refsWatcher.close()))
+				}
 			} catch (error) {
 				console.warn("[GitWatcher] Could not watch branch refs:", error)
 			}
@@ -311,15 +309,10 @@ export class GitWatcher implements vscode.Disposable {
 				const packedRefsPath = path.join(gitDir, "packed-refs")
 
 				if (fs.existsSync(packedRefsPath)) {
-					const packedRefsWatcher = vscode.workspace.createFileSystemWatcher(packedRefsPath)
-
-					this.disposables.push(
-						packedRefsWatcher.onDidChange(() => {
-							this.handleGitChange()
-						}),
-					)
-
-					this.disposables.push(packedRefsWatcher)
+					const packedRefsWatcher = fs.watch(packedRefsPath, () => {
+						this.handleGitChange()
+					})
+					this.disposables.push(new vscode.Disposable(() => packedRefsWatcher.close()))
 				}
 			} catch (error) {
 				console.warn("[GitWatcher] Could not watch packed-refs:", error)

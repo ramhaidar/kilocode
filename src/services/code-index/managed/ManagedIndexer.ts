@@ -50,6 +50,7 @@ interface ManagedIndexerWorkspaceFolderState {
 	manifest: ServerManifest | null
 	isIndexing: boolean
 	watcher: GitWatcher | null
+	repositoryUrl?: string
 	error?: ManagedIndexerError
 	/** In-flight manifest fetch promise - reused if already fetching */
 	manifestFetchPromise: Promise<ServerManifest> | null
@@ -75,7 +76,7 @@ export class ManagedIndexer implements vscode.Disposable {
 	constructor(public contextProxy: ContextProxy) {}
 
 	private async onConfigurationChange(config: ManagedIndexerConfig): Promise<void> {
-		logger.info("[ManagedIndexer] Configuration changed, restarting...")
+		console.info("[ManagedIndexer] Configuration changed, restarting...")
 		this.config = config
 		this.dispose()
 		await this.start()
@@ -172,6 +173,7 @@ export class ManagedIndexer implements vscode.Disposable {
 					manifest: null,
 					isIndexing: false,
 					watcher: null,
+					repositoryUrl: undefined,
 					manifestFetchPromise: null,
 				}
 
@@ -187,6 +189,7 @@ export class ManagedIndexer implements vscode.Disposable {
 						getCurrentBranch(cwd),
 					])
 					state.gitBranch = gitBranch
+					state.repositoryUrl = repositoryUrl
 
 					// Step 2: Get project configuration
 					const config = await getKilocodeConfig(cwd, repositoryUrl)
@@ -208,7 +211,7 @@ export class ManagedIndexer implements vscode.Disposable {
 						)
 					} catch (error) {
 						const errorMessage = error instanceof Error ? error.message : String(error)
-						logger.error(`[ManagedIndexer] Failed to fetch manifest for ${cwd}: ${errorMessage}`)
+						console.error(`[ManagedIndexer] Failed to fetch manifest for ${cwd}: ${errorMessage}`)
 						state.error = {
 							type: "manifest",
 							message: `Failed to fetch server manifest: ${errorMessage}`,
@@ -231,7 +234,7 @@ export class ManagedIndexer implements vscode.Disposable {
 						watcher.onEvent(this.onEvent.bind(this))
 					} catch (error) {
 						const errorMessage = error instanceof Error ? error.message : String(error)
-						logger.error(`[ManagedIndexer] Failed to start watcher for ${cwd}: ${errorMessage}`)
+						console.error(`[ManagedIndexer] Failed to start watcher for ${cwd}: ${errorMessage}`)
 						state.error = {
 							type: "scan",
 							message: `Failed to start file watcher: ${errorMessage}`,
@@ -248,7 +251,7 @@ export class ManagedIndexer implements vscode.Disposable {
 					return state
 				} catch (error) {
 					const errorMessage = error instanceof Error ? error.message : String(error)
-					logger.error(`[ManagedIndexer] Failed to get git info for ${cwd}: ${errorMessage}`)
+					console.error(`[ManagedIndexer] Failed to get git info for ${cwd}: ${errorMessage}`)
 					state.error = {
 						type: "git",
 						message: `Failed to get git information: ${errorMessage}`,
@@ -299,7 +302,7 @@ export class ManagedIndexer implements vscode.Disposable {
 	private async getManifest(state: ManagedIndexerWorkspaceFolderState, branch: string): Promise<ServerManifest> {
 		// If we're already fetching for this branch, return the existing promise
 		if (state.manifestFetchPromise && state.gitBranch === branch) {
-			logger.info(`[ManagedIndexer] Reusing in-flight manifest fetch for branch ${branch}`)
+			console.info(`[ManagedIndexer] Reusing in-flight manifest fetch for branch ${branch}`)
 			return state.manifestFetchPromise
 		}
 
@@ -308,56 +311,68 @@ export class ManagedIndexer implements vscode.Disposable {
 			return state.manifest
 		}
 
-		// Ensure we have the necessary configuration
-		if (!this.config?.kilocodeToken || !this.config?.kilocodeOrganizationId || !state.projectId) {
-			throw new Error("Missing required configuration for manifest fetch")
-		}
-
 		// Update branch BEFORE starting fetch so concurrent calls know we're fetching for this branch
 		state.gitBranch = branch
 
 		// Start a new fetch and cache the promise
-		logger.info(`[ManagedIndexer] Fetching manifest for branch ${branch}`)
-		state.manifestFetchPromise = getServerManifest(
-			this.config.kilocodeOrganizationId,
-			state.projectId,
-			branch,
-			this.config.kilocodeToken,
-		)
+		state.manifestFetchPromise = (async () => {
+			try {
+				// Recalculate projectId as it might have changed with the branch
+				const config = await getKilocodeConfig(state.workspaceFolder.uri.fsPath, state.repositoryUrl)
+				const projectId = config?.project?.id
 
-		try {
-			const manifest = await state.manifestFetchPromise
-			state.manifest = manifest
-			logger.info(
-				`[ManagedIndexer] Successfully fetched manifest for branch ${branch} (${manifest.files.length} files)`,
-			)
+				if (!projectId) {
+					throw new Error(`No project ID found for workspace folder ${state.workspaceFolder.uri.fsPath}`)
+				}
+				state.projectId = projectId
 
-			// Clear any previous manifest errors
-			if (state.error?.type === "manifest") {
-				state.error = undefined
-			}
+				// Ensure we have the necessary configuration
+				if (!this.config?.kilocodeToken || !this.config?.kilocodeOrganizationId) {
+					throw new Error("Missing required configuration for manifest fetch")
+				}
 
-			return manifest
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : String(error)
-			logger.error(`[ManagedIndexer] Failed to fetch manifest for branch ${branch}: ${errorMessage}`)
-
-			state.error = {
-				type: "manifest",
-				message: `Failed to fetch manifest: ${errorMessage}`,
-				timestamp: new Date().toISOString(),
-				context: {
-					operation: "fetch-manifest",
+				console.info(`[ManagedIndexer] Fetching manifest for branch ${branch}`)
+				const manifest = await getServerManifest(
+					this.config.kilocodeOrganizationId,
+					state.projectId,
 					branch,
-				},
-				details: error instanceof Error ? error.stack : undefined,
-			}
+					this.config.kilocodeToken,
+				)
 
-			throw error
-		} finally {
-			// Clear the promise cache after completion (success or failure)
-			state.manifestFetchPromise = null
-		}
+				state.manifest = manifest
+				console.info(
+					`[ManagedIndexer] Successfully fetched manifest for branch ${branch} (${manifest.files.length} files)`,
+				)
+
+				// Clear any previous manifest errors
+				if (state.error?.type === "manifest") {
+					state.error = undefined
+				}
+
+				return manifest
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : String(error)
+				console.error(`[ManagedIndexer] Failed to fetch manifest for branch ${branch}: ${errorMessage}`)
+
+				state.error = {
+					type: "manifest",
+					message: `Failed to fetch manifest: ${errorMessage}`,
+					timestamp: new Date().toISOString(),
+					context: {
+						operation: "fetch-manifest",
+						branch,
+					},
+					details: error instanceof Error ? error.stack : undefined,
+				}
+
+				throw error
+			} finally {
+				// Clear the promise cache after completion (success or failure)
+				state.manifestFetchPromise = null
+			}
+		})()
+
+		return state.manifestFetchPromise
 	}
 
 	async onEvent(event: GitWatcherEvent): Promise<void> {
@@ -368,27 +383,27 @@ export class ManagedIndexer implements vscode.Disposable {
 		const state = this.workspaceFolderState.find((s) => s.watcher === event.watcher)
 
 		if (!state || !state.watcher) {
-			logger.warn("[ManagedIndexer] Received event for unknown watcher")
+			console.warn("[ManagedIndexer] Received event for unknown watcher")
 			return
 		}
 
 		// Skip processing if state is not fully initialized
 		if (!state.projectId || !state.gitBranch) {
-			logger.warn("[ManagedIndexer] Received event for incompletely initialized workspace folder")
+			console.warn("[ManagedIndexer] Received event for incompletely initialized workspace folder")
 			return
 		}
 
 		// Handle different event types
 		switch (event.type) {
 			case "branch-changed": {
-				logger.info(`[ManagedIndexer] Branch changed from ${event.previousBranch} to ${event.newBranch}`)
+				console.info(`[ManagedIndexer] Branch changed from ${event.previousBranch} to ${event.newBranch}`)
 
 				try {
 					// Fetch manifest for the new branch (will reuse if already fetching)
 					await this.getManifest(state, event.newBranch)
 				} catch (error) {
 					// Error already logged and stored in getManifest
-					logger.warn(`[ManagedIndexer] Continuing despite manifest fetch error`)
+					console.warn(`[ManagedIndexer] Continuing despite manifest fetch error`)
 				}
 				break
 			}
@@ -397,28 +412,27 @@ export class ManagedIndexer implements vscode.Disposable {
 				// Update isIndexing state and clear any previous errors
 				state.isIndexing = true
 				state.error = undefined
-				logger.info(`[ManagedIndexer] Scan started on branch ${event.branch}`)
+				console.info(`[ManagedIndexer] Scan started on branch ${event.branch}`)
 				break
 
 			case "scan-end":
 				// Update isIndexing state
 				state.isIndexing = false
-				logger.info(`[ManagedIndexer] Scan completed on branch ${event.branch}`)
+				console.info(`[ManagedIndexer] Scan completed on branch ${event.branch}`)
 				break
 
 			case "file-deleted":
-				logger.info(`[ManagedIndexer] File deleted: ${event.filePath} on branch ${event.branch}`)
+				console.info(`[ManagedIndexer] File deleted: ${event.filePath} on branch ${event.branch}`)
 				// TODO: Implement file deletion handling if needed
 				break
 
 			case "file-changed": {
 				const { branch, filePath, fileHash, isBaseBranch, watcher } = event
-				const { projectId } = state
 
 				// Check if file extension is supported
 				const ext = path.extname(filePath).toLowerCase()
 				if (!scannerExtensions.includes(ext)) {
-					logger.info(`[ManagedIndexer] Skipping file with unsupported extension: ${filePath}`)
+					console.info(`[ManagedIndexer] Skipping file with unsupported extension: ${filePath}`)
 					return
 				}
 
@@ -427,7 +441,7 @@ export class ManagedIndexer implements vscode.Disposable {
 				try {
 					manifest = await this.getManifest(state, branch)
 				} catch (error) {
-					logger.warn(`[ManagedIndexer] Cannot process file without manifest, skipping`)
+					console.warn(`[ManagedIndexer] Cannot process file without manifest, skipping`)
 					return
 				}
 
@@ -440,10 +454,13 @@ export class ManagedIndexer implements vscode.Disposable {
 				return await this.fileUpsertLimit(async () => {
 					try {
 						// Ensure we have the necessary configuration
-						if (!this.config?.kilocodeToken || !this.config?.kilocodeOrganizationId) {
-							logger.warn("[ManagedIndexer] Missing token or organization ID, skipping file upsert")
+						if (!this.config?.kilocodeToken || !this.config?.kilocodeOrganizationId || !state.projectId) {
+							console.warn(
+								"[ManagedIndexer] Missing token, organization ID, or project ID, skipping file upsert",
+							)
 							return
 						}
+						const projectId = state.projectId
 
 						const absoluteFilePath = path.isAbsolute(filePath)
 							? filePath
@@ -463,7 +480,7 @@ export class ManagedIndexer implements vscode.Disposable {
 							kilocodeToken: this.config.kilocodeToken,
 						})
 
-						logger.info(
+						console.info(
 							`[ManagedIndexer] Successfully upserted file: ${relativeFilePath} (branch: ${branch})`,
 						)
 
@@ -473,7 +490,7 @@ export class ManagedIndexer implements vscode.Disposable {
 						}
 					} catch (error) {
 						const errorMessage = error instanceof Error ? error.message : String(error)
-						logger.error(`[ManagedIndexer] Failed to upsert file ${filePath}: ${errorMessage}`)
+						console.error(`[ManagedIndexer] Failed to upsert file ${filePath}: ${errorMessage}`)
 
 						// Store the error in state
 						state.error = {

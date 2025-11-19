@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { EventEmitter } from "events"
 import * as vscode from "vscode"
+import * as fs from "fs"
 import { GitWatcher, GitWatcherConfig, GitWatcherEvent, GitWatcherFileChangedEvent } from "../GitWatcher"
 import * as exec from "../utils/exec"
 import * as gitUtils from "../../services/code-index/managed/git-utils"
@@ -14,12 +15,25 @@ vi.mock("vscode", () => ({
 			dispose: vi.fn(),
 		})),
 	},
-	Disposable: {
-		from: vi.fn((...disposables) => ({
-			dispose: () => disposables.forEach((d) => d.dispose()),
-		})),
+	Disposable: class {
+		constructor(public dispose: () => any) {}
+		static from(...disposables: { dispose: () => any }[]) {
+			return {
+				dispose: () => disposables.forEach((d) => d.dispose()),
+			}
+		}
 	},
 }))
+
+// Mock fs
+vi.mock("fs", async () => {
+	const actual = await vi.importActual<typeof import("fs")>("fs")
+	return {
+		...actual,
+		watch: vi.fn().mockReturnValue({ close: vi.fn() }),
+		existsSync: vi.fn().mockReturnValue(true),
+	}
+})
 
 // Mock exec utilities
 vi.mock("../utils/exec")
@@ -512,18 +526,18 @@ describe("GitWatcher", () => {
 		})
 
 		it("should dispose all file system watchers", async () => {
-			const mockDispose = vi.fn()
-			vi.mocked(vscode.workspace.createFileSystemWatcher).mockReturnValue({
-				onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
-				dispose: mockDispose,
+			const mockClose = vi.fn()
+			vi.mocked(fs.watch).mockReturnValue({
+				close: mockClose,
 			} as any)
+			vi.mocked(fs.existsSync).mockReturnValue(true)
 
 			const watcher = new GitWatcher(config)
 			await watcher.start()
 			watcher.dispose()
 
-			// Should have disposed watchers (HEAD, refs, potentially packed-refs)
-			expect(mockDispose).toHaveBeenCalled()
+			// Should have disposed watchers (HEAD, refs, packed-refs)
+			expect(mockClose).toHaveBeenCalledTimes(3)
 		})
 	})
 
