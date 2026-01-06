@@ -4,6 +4,7 @@ import { logs } from "../services/logs.js"
 import type { ExtensionMessage, WebviewMessage, ExtensionState, ModeConfig } from "../types/messages.js"
 import { getTelemetryService } from "../services/telemetry/index.js"
 import { argsToMessage } from "../utils/safe-stringify.js"
+import type { Mode } from "../types/messages.js"
 
 export interface ExtensionHostOptions {
 	workspacePath: string
@@ -758,25 +759,55 @@ export class ExtensionHost extends EventEmitter {
 
 	private initializeState(): void {
 		// Create initial state that matches the extension's expected structure
-		this.currentState = {
+		const baseState: ExtensionState = {
 			version: "1.0.0",
 			apiConfiguration: {
-				apiProvider: "kilocode",
+				apiProvider: "kilocode" as const,
 				kilocodeToken: "",
 				kilocodeModel: "",
 				kilocodeOrganizationId: "",
 			},
-			chatMessages: [],
-			mode: "code",
+			clineMessages: [],
+			chatMessages: [], // Alias for clineMessages
+			mode: "code" as Mode,
 			customModes: this.options.customModes || [],
 			taskHistoryFullLength: 0,
 			taskHistoryVersion: 0,
-			renderContext: "cli",
+			renderContext: "cli" as const,
 			telemetrySetting: "unset", // Start with unset, will be configured by CLI
 			cwd: this.options.workspacePath,
 			mcpServers: [],
 			listApiConfigMeta: [],
 			currentApiConfigName: "default",
+			kilocodeDefaultModel: "",
+			shouldShowAnnouncement: false,
+			writeDelayMs: 0,
+			requestDelaySeconds: 0,
+			enableCheckpoints: false,
+			checkpointTimeout: 15,
+			maxOpenTabsContext: 10,
+			maxWorkspaceFiles: 100,
+			showRooIgnoredFiles: false,
+			maxReadFileLine: 1000,
+			maxImageFileSize: 10,
+			maxTotalImageSize: 25,
+			mcpEnabled: false,
+			enableMcpServerCreation: false,
+			cloudUserInfo: null,
+			cloudIsAuthenticated: false,
+			sharingEnabled: false,
+			organizationAllowList: {
+				allowAll: false,
+				providers: {},
+			},
+			isBrowserSessionActive: false,
+			autoCondenseContext: false,
+			autoCondenseContextPercent: 50,
+			profileThresholds: {},
+			hasOpenedModeSelector: false,
+			remoteControlEnabled: false,
+			taskSyncEnabled: false,
+			featureRoomoteControlEnabled: false,
 			// Enable background editing (preventFocusDisruption) for CLI mode
 			// This prevents the extension from trying to show VSCode diff views
 			experiments: {
@@ -787,8 +818,16 @@ export class ExtensionHost extends EventEmitter {
 				imageGeneration: false,
 				runSlashCommand: false,
 			},
-			// kilocode_change: Add appendSystemPrompt from CLI options
-			...(this.options.appendSystemPrompt && { appendSystemPrompt: this.options.appendSystemPrompt }),
+		}
+
+		// kilocode_change: Add appendSystemPrompt from CLI options if provided
+		if (this.options.appendSystemPrompt) {
+			this.currentState = {
+				...baseState,
+				appendSystemPrompt: this.options.appendSystemPrompt,
+			}
+		} else {
+			this.currentState = baseState
 		}
 
 		// The CLI will inject the actual configuration through updateState

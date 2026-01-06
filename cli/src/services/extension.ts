@@ -75,9 +75,10 @@ export interface ExtensionServiceEvents {
 export class ExtensionService extends EventEmitter {
 	private extensionHost: ExtensionHost
 	private messageBridge: MessageBridge
-	private options: Required<Omit<ExtensionServiceOptions, "identity" | "customModes">> & {
+	private options: Required<Omit<ExtensionServiceOptions, "identity" | "customModes" | "appendSystemPrompt">> & {
 		identity?: IdentityInfo
 		customModes?: ModeConfig[]
+		appendSystemPrompt?: string
 	}
 	private isInitialized = false
 	private isDisposed = false
@@ -89,14 +90,24 @@ export class ExtensionService extends EventEmitter {
 		// Resolve extension paths
 		const extensionPaths = resolveExtensionPaths()
 
-		// Set default options
-		this.options = {
+		// Set default options - build base options first
+		const baseOptions = {
 			workspace: options.workspace || process.cwd(),
 			mode: options.mode || "code",
 			extensionBundlePath: options.extensionBundlePath || extensionPaths.extensionBundlePath,
 			extensionRootPath: options.extensionRootPath || extensionPaths.extensionRootPath,
-			...(options.identity && { identity: options.identity }),
-			...(options.customModes && { customModes: options.customModes }),
+		}
+
+		// Add optional properties only if they exist
+		this.options = baseOptions
+		if (options.identity) {
+			this.options.identity = options.identity
+		}
+		if (options.customModes) {
+			this.options.customModes = options.customModes
+		}
+		if (options.appendSystemPrompt) {
+			this.options.appendSystemPrompt = options.appendSystemPrompt
 		}
 
 		// Create extension host
