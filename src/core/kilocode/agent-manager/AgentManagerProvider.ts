@@ -1911,7 +1911,9 @@ export class AgentManagerProvider implements vscode.Disposable {
 
 		try {
 			// Prepare the cloud session
-			this.outputChannel.appendLine("[AgentManager] Preparing cloud agent session...")
+			this.outputChannel.appendLine(
+				`[AgentManager] Preparing cloud agent session with githubRepo: ${githubRepo}, mode: ${mode}, model: ${model}`,
+			)
 			const prepareResponse = await cloudAgentService.prepareSession({
 				githubRepo,
 				prompt,
