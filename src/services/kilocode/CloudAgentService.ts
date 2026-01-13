@@ -74,7 +74,23 @@ export class CloudAgentService {
 		})
 
 		if (!response.ok) {
-			throw new Error(`Failed to prepare cloud agent session: ${response.status}`)
+			// Try to extract error details from response body
+			let errorMessage = `Failed to prepare cloud agent session: ${response.status}`
+			try {
+				const errorData = await response.json()
+				if (errorData.error) {
+					errorMessage = errorData.error
+				}
+				if (errorData.details && Array.isArray(errorData.details)) {
+					const detailMessages = errorData.details.map((d: { message?: string }) => d.message).filter(Boolean)
+					if (detailMessages.length > 0) {
+						errorMessage += `: ${detailMessages.join(", ")}`
+					}
+				}
+			} catch {
+				// Ignore JSON parse errors, use default message
+			}
+			throw new Error(errorMessage)
 		}
 
 		const data = await response.json()
