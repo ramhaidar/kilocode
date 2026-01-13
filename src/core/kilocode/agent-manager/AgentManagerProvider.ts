@@ -26,6 +26,9 @@ import { getNonce } from "../../webview/getNonce"
 import { getViteDevServerConfig } from "../../webview/getViteDevServerConfig"
 import { getRemoteUrl } from "../../../services/code-index/managed/git-utils"
 import { normalizeGitUrl } from "./normalizeGitUrl"
+// kilocode_change start - reuse extractRepositoryName for cloud agent
+import { extractRepositoryName } from "../../../utils/git"
+// kilocode_change end
 import type { ClineMessage } from "@roo-code/types"
 import type { ProviderSettings } from "@roo-code/types"
 // kilocode_change start - cloud agent support
@@ -1891,9 +1894,9 @@ export class AgentManagerProvider implements vscode.Disposable {
 			return
 		}
 
-		// Extract githubRepo from gitUrl (e.g., "https://github.com/owner/repo" -> "owner/repo")
-		const githubRepoMatch = gitUrl.match(/github\.com[/:]([^/]+\/[^/.]+)/)
-		const githubRepo = githubRepoMatch?.[1]
+		// Extract githubRepo from gitUrl using the shared utility
+		// This handles various URL formats including SSH aliases like github.com-kilocode
+		const githubRepo = extractRepositoryName(gitUrl)
 
 		if (!githubRepo) {
 			this.outputChannel.appendLine("[AgentManager] ERROR: Could not extract GitHub repo from git URL")
