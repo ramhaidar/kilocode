@@ -29,6 +29,7 @@ import {
 	Layers,
 	X,
 	Terminal,
+	Cloud, // kilocode_change - added Cloud icon for cloud agent mode
 } from "lucide-react"
 import DynamicTextArea from "react-textarea-autosize"
 import { cn } from "../../../lib/utils"
@@ -246,9 +247,11 @@ function NewAgentForm() {
 	const versionDropdownRef = useRef<HTMLDivElement>(null)
 	const startSessionFailedCounter = useAtomValue(startSessionFailedCounterAtom)
 
-	// Multi-version mode forces worktree mode
+	// Multi-version mode forces worktree mode (cloud mode is independent)
+	// kilocode_change start - cloud mode support
 	const isMultiVersion = versionCount > 1
-	const effectiveRunMode = isMultiVersion ? "worktree" : runMode
+	const effectiveRunMode = runMode === "cloud" ? "cloud" : isMultiVersion ? "worktree" : runMode
+	// kilocode_change end
 
 	// Reset loading state when session start fails (e.g., no workspace folder)
 	useEffect(() => {
@@ -296,6 +299,17 @@ function NewAgentForm() {
 		if (isEmpty || isStarting) return
 
 		setIsStarting(true)
+
+		// kilocode_change start - cloud mode support
+		if (effectiveRunMode === "cloud") {
+			// Start cloud agent session
+			vscode.postMessage({
+				type: "agentManager.startCloudSession",
+				prompt: trimmedPrompt,
+			})
+			return
+		}
+		// kilocode_change end
 
 		// Generate labels for multi-version mode
 		const labels = isMultiVersion ? generateVersionLabels(trimmedPrompt.slice(0, 50), versionCount) : undefined
@@ -394,6 +408,7 @@ function NewAgentForm() {
 					/>
 
 					<div className="absolute bottom-2 right-2 z-30 flex items-center gap-2">
+						{/* kilocode_change start - cloud mode dropdown */}
 						<div ref={dropdownRef} className="am-run-mode-dropdown-inline relative">
 							<StandardTooltip
 								content={
@@ -401,14 +416,22 @@ function NewAgentForm() {
 										? t("sessionDetail.versionsHelperText", { count: versionCount })
 										: effectiveRunMode === "local"
 											? t("sessionDetail.runModeLocal")
-											: t("sessionDetail.runModeWorktree")
+											: effectiveRunMode === "cloud"
+												? t("sessionDetail.runModeCloud")
+												: t("sessionDetail.runModeWorktree")
 								}>
 								<button
 									className={cn("am-run-mode-trigger-inline", isMultiVersion && "am-locked")}
 									onClick={() => !isMultiVersion && setIsDropdownOpen(!isDropdownOpen)}
 									disabled={isStarting || isMultiVersion}
 									type="button">
-									{effectiveRunMode === "local" ? <Folder size={14} /> : <GitBranch size={14} />}
+									{effectiveRunMode === "local" ? (
+										<Folder size={14} />
+									) : effectiveRunMode === "cloud" ? (
+										<Cloud size={14} />
+									) : (
+										<GitBranch size={14} />
+									)}
 									{!isMultiVersion && (
 										<ChevronDown
 											size={10}
@@ -441,9 +464,21 @@ function NewAgentForm() {
 										<span className="am-run-mode-label">{t("sessionDetail.runModeWorktree")}</span>
 										{runMode === "worktree" && <span className="am-checkmark">✓</span>}
 									</button>
+									<button
+										className={cn(
+											"am-run-mode-option-inline",
+											runMode === "cloud" && "am-selected",
+										)}
+										onClick={() => handleSelectMode("cloud")}
+										type="button">
+										<Cloud size={12} />
+										<span className="am-run-mode-label">{t("sessionDetail.runModeCloud")}</span>
+										{runMode === "cloud" && <span className="am-checkmark">✓</span>}
+									</button>
 								</div>
 							)}
 						</div>
+						{/* kilocode_change end */}
 
 						<div ref={versionDropdownRef} className="am-run-mode-dropdown-inline relative">
 							<StandardTooltip content={t("sessionDetail.versionsTooltip")}>
