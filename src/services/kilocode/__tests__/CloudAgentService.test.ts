@@ -115,13 +115,17 @@ describe("CloudAgentService", () => {
 				json: () => Promise.resolve({ success: true }),
 			})
 
-			const result = await service.initiateSession("test-session-123")
+			const result = await service.initiateSession("test-session-123", "test-token")
 
 			expect(result).toEqual({ success: true })
 			expect(mockFetch).toHaveBeenCalledWith(
 				expect.stringContaining("/trpc/initiateFromKilocodeSessionV2"),
 				expect.objectContaining({
 					method: "POST",
+					headers: expect.objectContaining({
+						Authorization: "Bearer test-token",
+						"Content-Type": "application/json",
+					}),
 					body: expect.stringContaining("test-session-123"),
 				}),
 			)
@@ -134,7 +138,7 @@ describe("CloudAgentService", () => {
 				statusText: "Internal Server Error",
 			})
 
-			await expect(service.initiateSession("test-session-123")).rejects.toThrow(
+			await expect(service.initiateSession("test-session-123", "test-token")).rejects.toThrow(
 				"Failed to initiate cloud agent session: 500",
 			)
 		})

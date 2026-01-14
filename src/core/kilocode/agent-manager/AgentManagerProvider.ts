@@ -1924,7 +1924,10 @@ export class AgentManagerProvider implements vscode.Disposable {
 
 			// Initiate the session
 			this.outputChannel.appendLine("[AgentManager] Initiating cloud agent session...")
-			const initiateResponse = await cloudAgentService.initiateSession(prepareResponse.cloudAgentSessionId)
+			const initiateResponse = await cloudAgentService.initiateSession(
+				prepareResponse.cloudAgentSessionId,
+				kilocodeToken!,
+			)
 
 			this.outputChannel.appendLine(`[AgentManager] Cloud session initiated: ${JSON.stringify(initiateResponse)}`)
 

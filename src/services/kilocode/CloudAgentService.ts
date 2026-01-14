@@ -111,13 +111,15 @@ export class CloudAgentService {
 	 * This starts the actual agent execution in the cloud.
 	 *
 	 * @param cloudAgentSessionId - The session ID from prepareSession()
+	 * @param kilocodeToken - The authentication token
 	 * @returns The initiation response
 	 * @throws Error if API call fails
 	 */
-	async initiateSession(cloudAgentSessionId: string): Promise<CloudAgentInitiateResponse> {
+	async initiateSession(cloudAgentSessionId: string, kilocodeToken: string): Promise<CloudAgentInitiateResponse> {
 		const response = await fetch(getCloudAgentInitiateUrl(), {
 			method: "POST",
 			headers: {
+				Authorization: `Bearer ${kilocodeToken}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({ cloudAgentSessionId }),
