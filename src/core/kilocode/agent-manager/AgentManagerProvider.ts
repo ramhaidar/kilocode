@@ -2021,8 +2021,8 @@ export class AgentManagerProvider implements vscode.Disposable {
 			this.outputChannel.appendLine(`[AgentManager] Cloud session stream URL: ${streamUrl}`)
 
 			// Redirect user to the web app to view the cloud session
-			// The URL format is /cloud/chat?sessionId=<sessionId>
-			const webAppUrl = `https://app.kilo.ai/cloud/chat?sessionId=${prepareResponse.cloudAgentSessionId}`
+			// The URL format is /cloud/chat?sessionId=<kiloSessionId> (UUID format, not cloudAgentSessionId)
+			const webAppUrl = `https://app.kilo.ai/cloud/chat?sessionId=${prepareResponse.kiloSessionId}`
 			this.outputChannel.appendLine(`[AgentManager] Redirecting to web app: ${webAppUrl}`)
 			await vscode.env.openExternal(vscode.Uri.parse(webAppUrl))
 
