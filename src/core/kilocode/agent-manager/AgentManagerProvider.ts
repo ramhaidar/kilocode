@@ -44,6 +44,8 @@ import { extractSessionConfigs, MAX_VERSION_COUNT } from "./multiVersionUtils"
 import { SessionManager } from "../../../shared/kilocode/cli-sessions/core/SessionManager"
 import { WorkspaceGitService } from "./WorkspaceGitService"
 import { SessionTerminalManager } from "./SessionTerminalManager"
+import { fetchAvailableModels, type ModelsApiResponse } from "./CliModelsFetcher"
+import { startSessionMessageSchema, type StartSessionMessage } from "./types"
 
 /**
  * AgentManagerProvider
@@ -73,6 +75,10 @@ export class AgentManagerProvider implements vscode.Disposable {
 	private sendingMessageMap: Map<string, string> = new Map()
 	// Worktree manager for parallel mode sessions (lazy initialized)
 	private worktreeManager: WorktreeManager | undefined
+	// Cached available models from CLI (fetched on panel open)
+	private availableModels: ModelsApiResponse | null = null
+	// Flag to track if models are being fetched
+	private fetchingModels: boolean = false
 
 	constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -242,6 +248,10 @@ export class AgentManagerProvider implements vscode.Disposable {
 				case "agentManager.webviewReady":
 					this.postStateToWebview()
 					void this.fetchAndPostRemoteSessions()
+					void this.fetchAndPostAvailableModels()
+					break
+				case "agentManager.refreshModels":
+					void this.fetchAndPostAvailableModels(true)
 					break
 				case "agentManager.startSession":
 					void this.handleStartSession(message)
@@ -335,15 +345,23 @@ export class AgentManagerProvider implements vscode.Disposable {
 		// every time they try to start an agent and authentication fails.
 		this.lastAuthErrorMessage = undefined
 
-		const prompt = message.prompt as string
+		// Validate message using zod schema for type safety
+		const parseResult = startSessionMessageSchema.safeParse(message)
+		if (!parseResult.success) {
+			this.outputChannel.appendLine(`[AgentManager] Invalid startSession message: ${parseResult.error.message}`)
+			this.postMessage({ type: "agentManager.startSessionFailed" })
+			return
+		}
+
+		const validatedMessage: StartSessionMessage = parseResult.data
+		const { prompt, parallelMode = false, existingBranch, model } = validatedMessage
+
 		// Clamp versions to valid range to prevent runaway process spawning
-		const rawVersions = (message.versions as number) ?? 1
+		const rawVersions = validatedMessage.versions ?? 1
 		const versions = Math.min(Math.max(rawVersions, 1), MAX_VERSION_COUNT)
 		// Only use labels if they match the version count, otherwise ignore
-		const rawLabels = message.labels as string[] | undefined
+		const rawLabels = validatedMessage.labels
 		const labels = rawLabels?.length === versions ? rawLabels : undefined
-		const parallelMode = (message.parallelMode as boolean) ?? false
-		const existingBranch = (message.existingBranch as string) ?? undefined
 
 		// Extract session configurations
 		const configs = extractSessionConfigs({ prompt, versions, labels, parallelMode, existingBranch })
@@ -355,6 +373,7 @@ export class AgentManagerProvider implements vscode.Disposable {
 				parallelMode: config.parallelMode,
 				labelOverride: config.label,
 				existingBranch: config.existingBranch,
+				model,
 			})
 			return
 		}
@@ -371,6 +390,7 @@ export class AgentManagerProvider implements vscode.Disposable {
 				parallelMode: config.parallelMode,
 				labelOverride: config.label,
 				existingBranch: config.existingBranch,
+				model,
 			})
 
 			// Wait for the pending session to transition to active before spawning the next
@@ -461,6 +481,7 @@ export class AgentManagerProvider implements vscode.Disposable {
 			parallelMode?: boolean
 			labelOverride?: string
 			existingBranch?: string
+			model?: string
 		},
 	): Promise<void> {
 		if (!prompt) {
@@ -519,6 +540,7 @@ export class AgentManagerProvider implements vscode.Disposable {
 				existingBranch: options?.existingBranch,
 				worktreeInfo,
 				effectiveWorkspace,
+				model: options?.model,
 			},
 			onSetupFailed,
 		)
@@ -571,6 +593,7 @@ export class AgentManagerProvider implements vscode.Disposable {
 			sessionId?: string
 			worktreeInfo?: { branch: string; path: string; parentBranch: string }
 			effectiveWorkspace?: string
+			model?: string
 		},
 		onSetupFailed?: () => void,
 	): Promise<boolean> {
@@ -1285,6 +1308,68 @@ export class AgentManagerProvider implements vscode.Disposable {
 			})
 		} catch (error) {
 			this.outputChannel.appendLine(`[AgentManager] Failed to fetch remote sessions: ${error}`)
+		}
+	}
+
+	/**
+	 * Fetch available models from CLI and post to webview.
+	 * @param forceRefresh - If true, fetches even if models are already cached
+	 */
+	private async fetchAndPostAvailableModels(forceRefresh: boolean = false): Promise<void> {
+		// Skip if we already have cached models and not forcing refresh
+		if (this.availableModels && !forceRefresh) {
+			this.postMessage({
+				type: "agentManager.availableModels",
+				...this.availableModels,
+			})
+			return
+		}
+
+		// Skip if already fetching
+		if (this.fetchingModels) {
+			return
+		}
+
+		this.fetchingModels = true
+
+		try {
+			// Find CLI path
+			const cliDiscovery = await findKilocodeCli((msg) => this.outputChannel.appendLine(`[AgentManager] ${msg}`))
+			if (!cliDiscovery) {
+				this.outputChannel.appendLine("[AgentManager] Cannot fetch models: CLI not found")
+				return
+			}
+
+			this.outputChannel.appendLine("[AgentManager] Fetching available models from CLI...")
+
+			const result = await fetchAvailableModels(cliDiscovery.cliPath, (msg) =>
+				this.outputChannel.appendLine(`[AgentManager] ${msg}`),
+			)
+
+			if (result) {
+				this.availableModels = result
+				this.outputChannel.appendLine(
+					`[AgentManager] Fetched ${result.models.length} models for provider "${result.provider}"`,
+				)
+
+				this.postMessage({
+					type: "agentManager.availableModels",
+					...result,
+				})
+			} else {
+				this.outputChannel.appendLine("[AgentManager] Failed to fetch models from CLI")
+				// Notify webview that model loading failed so it can exit loading state
+				this.postMessage({
+					type: "agentManager.modelsLoadFailed",
+					error: "Failed to fetch models from CLI",
+				})
+			}
+		} catch (error) {
+			this.outputChannel.appendLine(
+				`[AgentManager] Error fetching models: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		} finally {
+			this.fetchingModels = false
 		}
 	}
 
