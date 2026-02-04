@@ -1150,9 +1150,13 @@ export interface KiloPassSubscriptionState {
 	cancelAtPeriodEnd: boolean
 	currentStreakMonths: number
 	nextYearlyIssueAt: string | null
-	nextBonusCreditsAt: string | null
 	nextBonusCreditsUsd: number | null
 	nextBillingAt: string | null
+	currentPeriodBaseCreditsUsd: number
+	currentPeriodUsageUsd: number
+	currentPeriodBonusCreditsUsd: number | null
+	isBonusUnlocked: boolean
+	refillAt: string | null
 }
 
 export interface KiloPassStateResponsePayload {
