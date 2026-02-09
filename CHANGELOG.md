@@ -1,5 +1,11 @@
 # kilo-code
 
+## 5.4.2
+
+### Patch Changes
+
+- [#5744](https://github.com/Kilo-Org/kilocode/pull/5744) [`870cdd5`](https://github.com/Kilo-Org/kilocode/commit/870cdd57e7b096caca536ca0aa0da393a68eb730) Thanks [@fstanis](https://github.com/fstanis)! - Fix Opus 4.6 model name
+
 ## 5.4.1
 
 ### Patch Changes
